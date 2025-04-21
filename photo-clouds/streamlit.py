@@ -75,3 +75,13 @@ with tab1:
 with tab2:
     st.header("Animation")
     
+    longitudes = np.random.uniform(-np.pi, np.pi, size=5)
+    latitudes = np.random.uniform(-np.pi/2, np.pi/2, size=5)
+    t = np.linspace(0, 10, 50)
+    
+    # Run animation
+    ani = run_animation(longitudes.copy(), latitudes.copy(), t)
+    
+    # Render as HTML
+    html_anim = ani.to_jshtml()
+    st.components.v1.html(html_anim, height=400)

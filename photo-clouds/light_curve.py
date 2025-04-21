@@ -1,5 +1,12 @@
+"""
+light_curve.py
+
+Generates a simulated light curve and a light curve based on peak frequencies.
+"""
+
 import numpy as np
 from scipy.optimize import curve_fit
+
 from update import *
 from flux_array import *
 from frequency_processing import *
@@ -7,50 +14,53 @@ from solve_wind_speed import *
 
 def load_lines(file_name):
     lines = np.loadtxt(file_name, comments="#", delimiter=" ", unpack=False)
-    times = lines[0]
-    flux = lines[1]
-    return times, flux
+    x = lines[0]
+    y = lines[1]
+    return x, y
 
-def make_lightcurve(flux_array, latitudes, fluxes, time=2575, days_elapsed=24.299219225067645):
-    longitudes = np.full_like(latitudes, 0)
+def make_lightcurve(times, fluxes, latitudes, longitudes=None, object_name=None):
+    if object_name == "Neptune":
+        lat_space, reflectance_interp = load_lines("rad_reflectance_neptune.txt")
+        
+    else: 
+        reflectance_interp = None
+        
+    flux_array = FluxArray(reflectance_interp=reflectance_interp)
+    
+    time = len(times)
+    days_elapsed = times[-1] - times[0]
+
     latitudes = np.radians(latitudes)
+    if longitudes is None: 
+        longitudes = np.full_like(latitudes, 0)
+    
     lightcurve = []
 
     for t in range(time):
         flux_array.add_surface()
 
         dt = days_elapsed * 24 * 60 * 60 / time #s
-        # visible_count = 0
+
         for j in range(len(latitudes)):
             lon = longitudes[j]
             lat = latitudes[j]
         
             lon, lat = update(lon, lat, neptune_circ_rad_s, dt)
-            #print(f"Updated lon: {lon}, lat: {lat}")
         
             x, y, visible = project_to_grid(lon, lat, size=flux_array.size, radius=flux_array.alb_rad)
-            #print(f"Visible: {visible}")
 
             if visible:
-                flux_array.add_ellipse(cx=int(x), cy=int(y), a=6, b=2, flux=fluxes[j])
-                #print(f"⚠️ Out-of-bounds projection at t={t}: x={x:.1f}, y={y:.1f}")
+                visibility = np.cos(lat) * np.cos(lon)  # same logic as in project_to_grid
+                adjusted_flux = fluxes[j] * visibility
                 
-                # print(f"Adding flux at ({int(x)}, {int(y)}) with flux = {fluxes[j]}")
-                # visible_count += 1
+                flux_array.add_ellipse(cx=int(x), cy=int(y), a=6, b=2, flux=adjusted_flux)
 
             # Save updated values
             longitudes[j] = lon
             latitudes[j] = lat
 
-        # if t % 10 == 0:
-        #     plt.imshow(flux_array.array)
-        #     plt.title(f"Frame {t}")
-        #     plt.show()
-                
-        # print(f"🛰️ {visible_count}/{len(latitudes)} features visible at t={t}")
         flux_array.set_boundary()
         frame = flux_array.array.sum()
-        # print(f"Frame sum at t={t}: {flux_array.array.sum()}")
 
         lightcurve.append(frame)
         
@@ -79,11 +89,23 @@ def sum_sine_curve(times_obs, flux_obs, peak_frequencies_dt):
     # Generate the fitted curve
     return sine_sum(times_obs, *popt), popt
 
-def run_photo_weather(times_obs, flux_obs):
+def run_photo_weather(times_obs, flux_obs, object_name="Neptune", detrend_count=0, fluxes=None):
+    
     frequency_dt, power_dt, false_alarm_dt, flux_detrended, peak_frequencies_dt = detrend_max_freq(times_obs, flux_obs, probability=0.0001)
-    stack, a, b, c = getSolutions(peak_frequencies_dt)
+
+    for count in range(detrend_count):
+        frequency_dt, power_dt, false_alarm_dt, flux_detrended, peak_frequencies_dt = detrend_max_freq(times_obs, flux_detrended, probability=0.0001)
+
+    stack = get_wind_solutions(peak_frequencies_dt, object_name) 
     cleaned = stack[1][~np.isnan(stack[1])]
-    fitted_curve, popt = sum_sine_curve(times_obs, flux_obs, stack[0])
-    flux_array = FluxArray().add_surface()
-    lc = make_lightcurve(flux_array, latitudes=cleaned, fluxes=popt[::2], time=2575, days_elapsed=24.299219225067645)
-    return fitted_curve, lc
+    print(f"latitude solutions: {cleaned}")
+    
+    fitted_curve, popt = sum_sine_curve(times_obs, flux_detrended, stack[0])
+
+    if fluxes is not None:
+        model_lc = make_lightcurve(times_obs, fluxes=fluxes, latitudes=cleaned, longitudes=popt[1::2])
+    else: 
+        print(f"amplitudes: {popt[::2]}, longitude offsets: {popt[1::2]}")
+        model_lc = make_lightcurve(times_obs, fluxes=popt[::2], latitudes=cleaned, longitudes=popt[1::2])
+        
+    return fitted_curve, model_lc

@@ -1,3 +1,9 @@
+"""
+update.py
+
+Handles time series changes to model albedo
+"""
+
 import numpy as np 
 
 def project_to_grid(lon, lat, size, radius, center_lon=0, center_lat=0):
@@ -34,21 +40,15 @@ def update(lon, lat, lat_function, dt): #timestep dt
 
     return new_lon, new_lat   
 
+def eightTermTaylorCos(x):
+    cosine_eight = 1 - (0.5*(x**2)) + ((x**4)/24) #- ((x**6)/720) # + ((x**8)/40320)
+    return cosine_eight
+
 def neptune_wind(lat): #in degrees
     return -398 + 0.188*(lat**2) - 1.2e-5*(lat**4) #m/s #astropy.units
-
-def soft_cos(lat, floor=0.05):
-    return np.sqrt(np.cos(lat)**2 + floor**2)  # never drops below floor
-
-def neptune_circ_rad_s(lat): #soft version
-    R = 24764e3  # meters
-    rot_prd = 15.9663 * 60 * 60  # seconds
-    safe_cos_val = soft_cos(lat, floor=0.05)
-    return 2 * np.pi * (neptune_wind(lat) / (R * safe_cos_val) + (1 / rot_prd))
 
 def neptune_circ_rad_s(lat): #lat in radians
     R = 24764e3 #meters
     rot_prd = 15.9663*60*60 #seconds
-    denom = np.clip(np.cos(lat), 0.1, 1.0)  # Avoid blow-up
-    return 2 * np.pi * (neptune_wind(np.degrees(lat)) / (R * denom) + (1 / rot_prd))
+    return neptune_wind(np.degrees(lat)) / (R * eightTermTaylorCos(lat)) + (1 / rot_prd)
 
