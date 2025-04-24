@@ -49,7 +49,8 @@ def make_lightcurve(times, fluxes, latitudes, longitudes=None, object_name=None)
         
             x, y, visible = project_to_grid(lon, lat, size=flux_array.size, radius=flux_array.alb_rad)
 
-            if visible:
+            if ellipse_visible_numba(lon, lat, a_rad=np.radians(6), b_rad=np.radians(2), n_points=12, center_lon=0.0, center_lat=0.0):
+
                 visibility = np.cos(lat) * np.cos(lon)  # same logic as in project_to_grid
                 adjusted_flux = fluxes[j] * visibility
                 
@@ -98,14 +99,23 @@ def run_photo_weather(times_obs, flux_obs, object_name="Neptune", detrend_count=
 
     stack = get_wind_solutions(peak_frequencies_dt, object_name) 
     cleaned = stack[1][~np.isnan(stack[1])]
-    print(f"latitude solutions: {cleaned}")
+
+    if object_name == "Neptune":
+        lats_transformed = cleaned.copy()
+        lats_transformed[cleaned > 30] = -lats_transformed[cleaned > 30]
+        lats_transformed[np.abs(cleaned) <= 30] = np.abs(lats_transformed[np.abs(cleaned) <= 30])
+
+    else:
+        lats_transformed = cleaned
+    
+    print(f"latitude solutions: {lats_transformed}")
     
     fitted_curve, popt = sum_sine_curve(times_obs, flux_detrended, stack[0])
 
     if fluxes is not None:
-        model_lc = make_lightcurve(times_obs, fluxes=fluxes, latitudes=cleaned, longitudes=popt[1::2])
+        model_lc = make_lightcurve(times_obs, fluxes=fluxes, latitudes=lats_transformed, longitudes=popt[1::2])
     else: 
         print(f"amplitudes: {popt[::2]}, longitude offsets: {popt[1::2]}")
-        model_lc = make_lightcurve(times_obs, fluxes=popt[::2], latitudes=cleaned, longitudes=popt[1::2])
+        model_lc = make_lightcurve(times_obs, fluxes=popt[::2], latitudes=lats_transformed, longitudes=popt[1::2])
         
     return fitted_curve, model_lc

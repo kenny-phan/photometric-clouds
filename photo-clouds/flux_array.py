@@ -3,12 +3,49 @@ from update import *
 from numba import njit
 
 @njit
+def ellipse_visible_numba(lon, lat, a_rad, b_rad, n_points, center_lon, center_lat):
+    visible = False
+    for i in range(n_points):
+        theta = 2 * np.pi * i / n_points
+        lon_edge = lon + a_rad * np.cos(theta)
+        lat_edge = lat + b_rad * np.sin(theta)
+
+        # Normalize longitude difference to [-π, π]
+        lon_rel = ((lon_edge - center_lon + np.pi) % (2 * np.pi)) - np.pi
+        lat_rel = lat_edge - center_lat
+
+        # Check orthographic visibility
+        cos_lat_rel = np.cos(lat_rel)
+        cos_lon_rel = np.cos(lon_rel)
+        if cos_lat_rel * cos_lon_rel > 0:
+            visible = True
+            break
+
+    return visible
+
+@njit
 def add_ellipse_numba(array, cx, cy, a, b, flux):
     size = array.shape[0]
+    inside_pixels = []
+
+    # Single pass: collect all pixels inside the ellipse
     for y in range(size):
         for x in range(size):
             if ((x - cx) ** 2 / a**2 + (y - cy) ** 2 / b**2) <= 1:
-                array[y, x] += flux
+                inside_pixels.append((y, x))
+
+    pixel_count = len(inside_pixels)
+
+    if pixel_count == 0:
+        return array  # Avoid division by zero
+
+    flux_per_pixel = flux / pixel_count
+
+    # Apply the flux to each pixel
+    for i in range(pixel_count):
+        y, x = inside_pixels[i]
+        array[y, x] += flux_per_pixel
+
     return array
 
 @njit

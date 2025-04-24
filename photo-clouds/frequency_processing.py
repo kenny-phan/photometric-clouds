@@ -4,7 +4,7 @@ from astropy.timeseries import LombScargle
 from scipy.signal import find_peaks
 import os
 
-def make_periodogram(ls, minimum_frequency, maximum_frequency=3, samples_per_peak=10, probability=0.05, bootstrap=False):
+def make_periodogram(ls, minimum_frequency=0.01, maximum_frequency=3, samples_per_peak=10, probability=0.05, bootstrap=False):
     frequency, power = ls.autopower(minimum_frequency=minimum_frequency, maximum_frequency=maximum_frequency, samples_per_peak=samples_per_peak) #0.0001, 3
     if bootstrap:
         print("bootstrapping false alarm line")
