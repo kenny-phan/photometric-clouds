@@ -32,6 +32,22 @@ def neptune_wind_speed(freq, a, b, c, R, T, fr):
     eq = ((2 * np.pi * R * eightTermTaylorCos(p) * (freq - fr))/T) - polynomial(rad2deg(p), a, b, c)
     return eq
 
+from scipy.optimize import root_scalar
+
+def solve_numeric_latitude(freq_val, a, b, c, R, T, fr):
+    def equation(p_rad):
+        cos8 = 1 - 0.5*p_rad**2 + (p_rad**4)/24 - (p_rad**6)/720 + (p_rad**8)/40320
+        deg = np.degrees(p_rad)
+        lhs = (2 * np.pi * R * cos8 * (freq_val - fr)) / T
+        rhs = a + b * deg**2 + c * deg**4
+        return lhs - rhs
+
+    # Try solving in the range 0 to pi/2 radians
+    result = root_scalar(equation, bracket=[0, np.pi / 2], method='brentq')
+    if result.converged:
+        return np.degrees(result.root)
+    return np.nan
+
 
 def solve_freq_lat_wind(peak_frequencies, a, b, c, R, T, fr):
     """
@@ -56,48 +72,27 @@ def solve_freq_lat_wind(peak_frequencies, a, b, c, R, T, fr):
     missed_ct = 0
 
     for freq_val in peak_frequencies:
-        eq = neptune_wind_speed(freq_val, a, b, c, R, T, fr)
-        success = False
-        initial_guesses = np.linspace(0, np.pi / 2, 20)
-
-        for guess in initial_guesses:
-            try:
-                solution = sp.nsolve(eq, p, guess)
-                p_val = float(solution) * (180 / np.pi)
-
-                if -90 <= p_val <= 90:
-                    solutions.append(p_val)
-                    success = True
-                    break  # Stop at the first valid solution
-
-            except sp.SympifyError:
+        try:
+            lat = solve_numeric_latitude(freq_val, a, b, c, R, T, fr)
+            if -90 <= lat <= 90:
+                solutions.append(lat)
+            else:
                 solutions.append(np.nan)
-                break  # This specific error shouldn't retry
-
-            except Exception as e:
-                pass 
-                #print(f"{freq_val}: {e}")
-
-        if not success:
-            missed_ct += 1
+                missed_ct += 1
+                no_solution.append(freq_val)
+        except:
             solutions.append(np.nan)
+            missed_ct += 1
             no_solution.append(freq_val)
 
     return solutions, no_solution, missed_ct
     
 
 def stack_freq_lat_wind(peak_frequencies, solutions, a, b, c):
-    freq_stack = np.array(peak_frequencies)
     lat_stack = np.array(solutions)
-    wind_stack = []
-    
-    for solution in solutions:
-        wind_speed_at_lat_sol = polynomial(solution, a, b, c)
-        wind_stack.append(wind_speed_at_lat_sol)
-    
-    vstack = np.array(wind_stack)
-    sol_freq = np.stack((freq_stack, lat_stack, vstack), axis=0) #frequency (1/day) = 0, latitude = 1, windspeed = 2
-    return sol_freq
+    freq_stack = np.array(peak_frequencies)
+    wind_stack = polynomial(lat_stack, a, b, c)
+    return np.stack((freq_stack, lat_stack, wind_stack), axis=0)
 
 
 def get_wind_solutions(peak_frequencies, object_name):

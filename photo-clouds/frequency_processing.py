@@ -4,22 +4,22 @@ from astropy.timeseries import LombScargle
 from scipy.signal import find_peaks
 import os
 
-def make_periodogram(ls, minimum_frequency=0.01, maximum_frequency=3, samples_per_peak=10, probability=0.05, bootstrap=False):
+def make_periodogram(ls, minimum_frequency=0.01, maximum_frequency=3, samples_per_peak=3, probability=0.05, bootstrap=False):
     frequency, power = ls.autopower(minimum_frequency=minimum_frequency, maximum_frequency=maximum_frequency, samples_per_peak=samples_per_peak) #0.0001, 3
     if bootstrap:
         print("bootstrapping false alarm line")
         n_bootstrap = 100 #0 # also try 100000 if it's fast
         false_alarm = ls.false_alarm_level(probability, method='bootstrap', method_kwds=dict(n_bootstraps=n_bootstrap))
     else: 
-        false_alarm = ls.false_alarm_level(probability)
+        false_alarm = ls.false_alarm_level(probability, method="baluev")
     return frequency, power, false_alarm
     
 def detrend_max_freq(times, flux, probability=0.05, \
-                        minimum_frequency=0.01, maximum_frequency=3, samples_per_peak=10):
+                        minimum_frequency=0.01, maximum_frequency=3, samples_per_peak=3, bootstrap=False):
 
     ls = LombScargle(times, flux)
 
-    frequency, power, false_alarm = make_periodogram(ls, minimum_frequency, maximum_frequency, samples_per_peak, probability, bootstrap=True)
+    frequency, power, false_alarm = make_periodogram(ls, minimum_frequency, maximum_frequency, samples_per_peak, probability, bootstrap=bootstrap)
 
     false_alarm_array = np.full_like(power, false_alarm)
 
@@ -33,7 +33,7 @@ def detrend_max_freq(times, flux, probability=0.05, \
     flux_detrended = flux - subtraction + flux_mean
 
     ls_detrended = LombScargle(times, flux_detrended)
-    frequency_dt, power_dt, false_alarm_dt = make_periodogram(ls_detrended, minimum_frequency, maximum_frequency, samples_per_peak, probability, bootstrap=True)
+    frequency_dt, power_dt, false_alarm_dt = make_periodogram(ls_detrended, minimum_frequency, maximum_frequency, samples_per_peak, probability, bootstrap=bootstrap)
 
     best_frequency_dt = frequency_dt[np.argmax(power_dt)]
 

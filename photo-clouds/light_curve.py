@@ -18,12 +18,17 @@ def load_lines(file_name):
     y = lines[1]
     return x, y
 
-def make_lightcurve(times, fluxes, latitudes, longitudes=None, object_name=None):
+def make_lightcurve(times, fluxes, latitudes, longitudes=None, a_arr=None, b_arr=None, object_name=None):
     if object_name == "Neptune":
         lat_space, reflectance_interp = load_lines("rad_reflectance_neptune.txt")
-        
+        a_arr = [30, 45, 20, 18, 6, 8, 6]
+        b_arr = [3, 6, 2, 3, 3, 3, 3,]
+
     else: 
         reflectance_interp = None
+        if a_arr is None: a_arr = np.full_like(latitudes, 6)
+        if b_arr is None: b_arr = np.full_like(latitudes, 2)
+
         
     flux_array = FluxArray(reflectance_interp=reflectance_interp)
     
@@ -49,12 +54,12 @@ def make_lightcurve(times, fluxes, latitudes, longitudes=None, object_name=None)
         
             x, y, visible = project_to_grid(lon, lat, size=flux_array.size, radius=flux_array.alb_rad)
 
-            if ellipse_visible_numba(lon, lat, a_rad=np.radians(6), b_rad=np.radians(2), n_points=12, center_lon=0.0, center_lat=0.0):
+            if ellipse_visible_numba(lon, lat, a_rad=np.radians(a_arr[j]), b_rad=np.radians(b_arr[j]), n_points=12, center_lon=0.0, center_lat=0.0):
 
                 visibility = np.cos(lat) * np.cos(lon)  # same logic as in project_to_grid
                 adjusted_flux = fluxes[j] * visibility
                 
-                flux_array.add_ellipse(cx=int(x), cy=int(y), a=6, b=2, flux=adjusted_flux)
+                flux_array.add_ellipse(cx=int(x), cy=int(y), a=a_arr[j], b=b_arr[j], flux=adjusted_flux)
 
             # Save updated values
             longitudes[j] = lon
