@@ -1,36 +1,73 @@
 import numpy as np
-from update import *
 from numba import njit
 
+from update import *
+
+
 @njit
-def ellipse_visible_numba(lon, lat, a_rad, b_rad, n_points, center_lon, center_lat):
+def pixel_to_radians(pixel_value, radius):
+    """
+    Convert pixel value to angular distance in radians.
+    """
+    return np.arctan2(pixel_value, radius)
+
+
+@njit
+def ellipse_visible_numba(lon, lat, a, b, n_points, center_lon, center_lat, radius_px=90):
+    """
+    Check if any part of an ellipse along the latitudinal axis (minor axis)
+    is visible in the orthographic projection centered at (center_lon, center_lat).
+    The ellipse is considered visible if at least one latitudinal vertex is visible.
+    """
+    a_rad = pixel_to_radians(a, radius_px)  # Convert pixel to radians (minor axis)
+    
     visible = False
-    for i in range(n_points):
-        theta = 2 * np.pi * i / n_points
-        lon_edge = lon + a_rad * np.cos(theta)
-        lat_edge = lat + b_rad * np.sin(theta)
 
-        # Normalize longitude difference to [-π, π]
-        lon_rel = ((lon_edge - center_lon + np.pi) % (2 * np.pi)) - np.pi
-        lat_rel = lat_edge - center_lat
+    # Calculate the two minor axis vertices (lon, lat ± a_rad)
+    minor_lat1 = lat + a_rad
+    minor_lat2 = lat - a_rad
 
-        # Check orthographic visibility
-        cos_lat_rel = np.cos(lat_rel)
-        cos_lon_rel = np.cos(lon_rel)
-        if cos_lat_rel * cos_lon_rel > 0:
-            visible = True
-            break
+    # Function to check visibility of a point (lon, lat) in orthographic projection
+    def is_visible(lon_check, lat_check):
+        lon_rel = lon_check - center_lon
+        if lon_rel > np.pi:
+            lon_rel -= 2 * np.pi
+        elif lon_rel < -np.pi:
+            lon_rel += 2 * np.pi
+        
+        lat_rel = lat_check - center_lat
 
+        # Calculate the angular distance
+        angular_distance = np.arccos(np.sin(lat_rel) * np.sin(center_lat) + np.cos(lat_rel) * np.cos(center_lat) * np.cos(lon_rel))
+        
+        # If the point is within the visible hemisphere (angular distance < π/2), it is visible
+        return angular_distance < np.pi / 2
+
+    # Check visibility for the two minor axis vertices: (lon, lat ± b_rad)
+    vertex1_visible = is_visible(lon, minor_lat1)
+    vertex2_visible = is_visible(lon, minor_lat2)
+
+    # The ellipse is visible if at least one vertex is visible
+    if vertex1_visible or vertex2_visible:
+        visible = True
+    
     return visible
+
 
 @njit
 def add_ellipse_numba(array, cx, cy, a, b, flux):
     size = array.shape[0]
     inside_pixels = []
 
+    # Ensure cx, cy are within bounds using modulo arithmetic for wrap-around
+    cx = cx % size  # Wrap-around center x
+    cy = cy % size  # Wrap-around center y
+
     # Single pass: collect all pixels inside the ellipse
     for y in range(size):
         for x in range(size):
+            # Ellipse equation: ((x - cx) ** 2 / a**2 + (y - cy) ** 2 / b**2) <= 1
+            # This checks if the point (x, y) is inside the ellipse
             if ((x - cx) ** 2 / a**2 + (y - cy) ** 2 / b**2) <= 1:
                 inside_pixels.append((y, x))
 
@@ -44,9 +81,16 @@ def add_ellipse_numba(array, cx, cy, a, b, flux):
     # Apply the flux to each pixel
     for i in range(pixel_count):
         y, x = inside_pixels[i]
-        array[y, x] += flux_per_pixel
+        
+        # Handle wrap-around for flux application (i.e., x and y can be outside the grid)
+        # Apply flux to the correct grid positions
+        x_mod = x % size  # Wrap-around in x direction
+        y_mod = y % size  # Wrap-around in y direction
+
+        array[y_mod, x_mod] += flux_per_pixel
 
     return array
+
 
 @njit
 def set_boundary_numba(array, cx, cy, r):

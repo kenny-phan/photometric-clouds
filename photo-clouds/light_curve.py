@@ -18,10 +18,12 @@ def load_lines(file_name):
     y = lines[1]
     return x, y
 
-def make_lightcurve(times, fluxes, latitudes, longitudes=None, object_name=None):
+def make_lightcurve(times, fluxes, latitudes, longitudes=None, a_arr=None, b_arr=None, object_name=None):
+    if a_arr is None: a_arr = np.full_like(latitudes, 6)
+    if b_arr is None: b_arr = np.full_like(latitudes, 2)   
+    
     if object_name == "Neptune":
         lat_space, reflectance_interp = load_lines("rad_reflectance_neptune.txt")
-        
     else: 
         reflectance_interp = None
         
@@ -47,14 +49,14 @@ def make_lightcurve(times, fluxes, latitudes, longitudes=None, object_name=None)
         
             lon, lat = update(lon, lat, neptune_circ_rad_s, dt)
         
-            x, y, visible = project_to_grid(lon, lat, size=flux_array.size, radius=flux_array.alb_rad)
+            x, y = project_to_grid(lon, lat, size=flux_array.size, radius=flux_array.alb_rad)
 
-            if ellipse_visible_numba(lon, lat, a_rad=np.radians(6), b_rad=np.radians(2), n_points=12, center_lon=0.0, center_lat=0.0):
+            if ellipse_visible_numba(lon, lat, a=a_arr[j], b=b_arr[j], n_points=12, center_lon=0.0, center_lat=0.0):
 
                 visibility = np.cos(lat) * np.cos(lon)  # same logic as in project_to_grid
                 adjusted_flux = fluxes[j] * visibility
                 
-                flux_array.add_ellipse(cx=int(x), cy=int(y), a=6, b=2, flux=adjusted_flux)
+                flux_array.add_ellipse(cx=int(x), cy=int(y), a=a_arr[j], b=b_arr[j], flux=adjusted_flux)
 
             # Save updated values
             longitudes[j] = lon
@@ -90,9 +92,9 @@ def sum_sine_curve(times_obs, flux_obs, peak_frequencies_dt):
     # Generate the fitted curve
     return sine_sum(times_obs, *popt), popt
 
-def run_photo_weather(times_obs, flux_obs, object_name="Neptune", detrend_count=0, fluxes=None):
+def run_photo_weather(times_obs, flux_obs, object_name, detrend_count=0, a_arr=None, b_arr=None):
     
-    frequency_dt, power_dt, false_alarm_dt, flux_detrended, peak_frequencies_dt = detrend_max_freq(times_obs, flux_obs, probability=0.0001)
+    frequency_dt, power_dt, false_alarm_dt, flux_detrended, peak_frequencies_dt = detrend_max_freq(times_obs, flux_obs, probability=0.0001, bootstrap=True)
 
     for count in range(detrend_count):
         frequency_dt, power_dt, false_alarm_dt, flux_detrended, peak_frequencies_dt = detrend_max_freq(times_obs, flux_detrended, probability=0.0001)
@@ -108,14 +110,16 @@ def run_photo_weather(times_obs, flux_obs, object_name="Neptune", detrend_count=
     else:
         lats_transformed = cleaned
     
-    print(f"latitude solutions: {lats_transformed}")
+    #print(f"latitude solutions: {lats_transformed}")
     
     fitted_curve, popt = sum_sine_curve(times_obs, flux_detrended, stack[0])
+    fit_amp = popt[::2]
+    fit_offset = popt[1::2]
 
-    if fluxes is not None:
-        model_lc = make_lightcurve(times_obs, fluxes=fluxes, latitudes=lats_transformed, longitudes=popt[1::2])
-    else: 
-        print(f"amplitudes: {popt[::2]}, longitude offsets: {popt[1::2]}")
-        model_lc = make_lightcurve(times_obs, fluxes=popt[::2], latitudes=lats_transformed, longitudes=popt[1::2])
+    if a_arr is not None and b_arr is not None:
+        model_lc = make_lightcurve(times_obs, fluxes=fluxes, latitudes=lats_transformed, longitudes=fit_offset, a_arr=a_arr, b_arr=b_arr, object_name=object_name) 
+    else:
+        #print(f"amplitudes: {popt[::2]}, longitude offsets: {popt[1::2]}")
+        model_lc = make_lightcurve(times_obs, fluxes=fit_amp, latitudes=lats_transformed, longitudes=fit_offset, object_name=object_name)
         
-    return fitted_curve, model_lc
+    return fitted_curve, model_lc, lats_transformed, fit_offset, fit_amp, frequency_dt, power_dt, false_alarm_dt
