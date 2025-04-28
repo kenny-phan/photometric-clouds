@@ -23,9 +23,14 @@ def make_lightcurve(times, fluxes, latitudes, longitudes=None, a_arr=None, b_arr
     if b_arr is None: b_arr = np.full_like(latitudes, 2)   
     
     if object_name == "Neptune":
-        with open('rad_reflectance_neptune.txt', 'r') as file:
-            content = file.read()
-        lat_space, reflectance_interp = content[0], content[1]
+        filename = 'rad_reflectance_neptune.txt'
+        if not os.path.exists(filename):
+            url = 'https://raw.githubusercontent.com/kenny-phan/photometric-clouds/main/photo-clouds/rad_reflectance_neptune.txt'
+            r = requests.get(url)
+            with open(filename, 'wb') as f:
+                f.write(r.content)
+
+        lat_space, reflectance_interp = load_lines(filename)
     else: 
         reflectance_interp = None
         
