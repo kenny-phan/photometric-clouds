@@ -4,6 +4,8 @@ light_curve.py
 Generates a simulated light curve and a light curve based on peak frequencies.
 """
 
+import os
+import requests 
 import numpy as np
 from scipy.optimize import curve_fit
 
